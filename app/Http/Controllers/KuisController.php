@@ -10,7 +10,6 @@ use App\Models\PerolehanNilai;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Http\UploadedFile;
 
 class KuisController extends Controller
 {
@@ -24,7 +23,6 @@ class KuisController extends Controller
             return null;
         }
 
-        // Jika sudah URL lengkap
         if (
             str_starts_with($path, 'http://') ||
             str_starts_with($path, 'https://')
@@ -32,9 +30,7 @@ class KuisController extends Controller
             return $path;
         }
 
-        return asset(
-            'storage/' . ltrim($path, '/')
-        );
+        return asset('storage/' . ltrim($path, '/'));
     }
 
 
@@ -45,11 +41,9 @@ class KuisController extends Controller
     private function formatDetail($detail)
     {
         return [
-            'id_detail_kuis' =>
-                $detail->id_detail_kuis,
+            'id_detail_kuis' => $detail->id_detail_kuis,
 
-            'q' =>
-                $detail->pertanyaan,
+            'q' => $detail->pertanyaan ?? '',
 
             'gambar_pertanyaan' =>
                 $this->imageUrl(
@@ -57,41 +51,33 @@ class KuisController extends Controller
                 ),
 
             'options' => [
-
                 [
-                    'text' =>
-                        $detail->pilihan_a,
-
+                    'key' => 'A',
+                    'text' => $detail->pilihan_a ?? '',
                     'image' =>
                         $this->imageUrl(
                             $detail->gambar_pilihan_a
                         ),
                 ],
-
                 [
-                    'text' =>
-                        $detail->pilihan_b,
-
+                    'key' => 'B',
+                    'text' => $detail->pilihan_b ?? '',
                     'image' =>
                         $this->imageUrl(
                             $detail->gambar_pilihan_b
                         ),
                 ],
-
                 [
-                    'text' =>
-                        $detail->pilihan_c,
-
+                    'key' => 'C',
+                    'text' => $detail->pilihan_c ?? '',
                     'image' =>
                         $this->imageUrl(
                             $detail->gambar_pilihan_c
                         ),
                 ],
-
                 [
-                    'text' =>
-                        $detail->pilihan_d,
-
+                    'key' => 'D',
+                    'text' => $detail->pilihan_d ?? '',
                     'image' =>
                         $this->imageUrl(
                             $detail->gambar_pilihan_d
@@ -99,12 +85,223 @@ class KuisController extends Controller
                 ],
             ],
 
-            'answer' =>
-                $detail->jawaban,
+            /*
+            |--------------------------------------------------------------------------
+            | Jawaban benar
+            |--------------------------------------------------------------------------
+            |
+            | Nilainya tetap A/B/C/D.
+            | Jadi pilihan boleh berupa gambar saja,
+            | tetapi jawaban benar tetap menunjuk pilihan tersebut.
+            |
+            */
 
-            'poin' =>
-                $detail->poin,
+            'answer' => $detail->jawaban,
+
+            'poin' => $detail->poin ?? 10,
         ];
+    }
+
+
+    // =====================================================
+    // NORMALISASI JAWABAN
+    // =====================================================
+
+    private function normalizeAnswer($jawaban)
+    {
+        if ($jawaban === null) {
+            return null;
+        }
+
+        $jawaban = strtoupper(trim((string) $jawaban));
+
+        /*
+        |--------------------------------------------------------------------------
+        | Bentuk normal
+        |--------------------------------------------------------------------------
+        */
+
+        if (in_array($jawaban, ['A', 'B', 'C', 'D'])) {
+            return $jawaban;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Jika frontend mengirim angka
+        |--------------------------------------------------------------------------
+        |
+        | 0 = A
+        | 1 = B
+        | 2 = C
+        | 3 = D
+        |
+        */
+
+        if (in_array($jawaban, ['0', '1', '2', '3'])) {
+            return [
+                '0' => 'A',
+                '1' => 'B',
+                '2' => 'C',
+                '3' => 'D',
+            ][$jawaban];
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Jika frontend mengirim "pilihan_a", dll.
+        |--------------------------------------------------------------------------
+        */
+
+        $mapping = [
+            'PILIHAN_A' => 'A',
+            'PILIHAN_B' => 'B',
+            'PILIHAN_C' => 'C',
+            'PILIHAN_D' => 'D',
+
+            'OPTION_A' => 'A',
+            'OPTION_B' => 'B',
+            'OPTION_C' => 'C',
+            'OPTION_D' => 'D',
+
+            'A' => 'A',
+            'B' => 'B',
+            'C' => 'C',
+            'D' => 'D',
+        ];
+
+        return $mapping[$jawaban] ?? null;
+    }
+
+
+    // =====================================================
+    // VALIDASI ISI SOAL
+    // =====================================================
+
+    private function validateQuestionContent(
+        Request $request,
+        $index,
+        $soal
+    ) {
+        /*
+        |--------------------------------------------------------------------------
+        | PERTANYAAN
+        |--------------------------------------------------------------------------
+        |
+        | Pertanyaan boleh:
+        | 1. teks
+        | 2. gambar
+        | 3. teks + gambar
+        |
+        */
+
+        $pertanyaan =
+            trim(
+                $soal['pertanyaan'] ?? ''
+            );
+
+        $hasGambarPertanyaan =
+            $request->hasFile(
+                "soal.$index.gambar_pertanyaan"
+            );
+
+        if (
+            $pertanyaan === '' &&
+            !$hasGambarPertanyaan
+        ) {
+            return 'Pertanyaan harus diisi atau diberikan gambar.';
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | PILIHAN A-D
+        |--------------------------------------------------------------------------
+        |
+        | Setiap pilihan boleh:
+        | 1. teks
+        | 2. gambar
+        | 3. teks + gambar
+        |
+        */
+
+        foreach (
+            ['A', 'B', 'C', 'D']
+            as $option
+        ) {
+
+            $text =
+                trim(
+                    $soal['pilihan'][$option]
+                    ?? ''
+                );
+
+            $hasImage =
+                $request->hasFile(
+                    "soal.$index.gambar_pilihan.$option"
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | Saat EDIT, gambar lama juga harus dianggap tersedia.
+            |--------------------------------------------------------------------------
+            */
+
+            $idDetail =
+                $soal['id_detail_kuis']
+                ?? null;
+
+            $detailLama =
+                $idDetail
+                    ? DetailKuis::find($idDetail)
+                    : null;
+
+            $field =
+                'gambar_pilihan_' .
+                strtolower($option);
+
+            $hasOldImage =
+                $detailLama &&
+                !empty($detailLama->$field) &&
+                empty(
+                    $soal['hapus_gambar_pilihan'][$option]
+                    ?? false
+                );
+
+            if (
+                $text === '' &&
+                !$hasImage &&
+                !$hasOldImage
+            ) {
+                return
+                    "Pilihan $option harus diisi atau diberikan gambar.";
+            }
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | JAWABAN BENAR
+        |--------------------------------------------------------------------------
+        |
+        | Jawaban benar TIDAK perlu berupa teks.
+        |
+        | Yang dibutuhkan hanya penanda A/B/C/D.
+        |
+        */
+
+        $jawaban =
+            $this->normalizeAnswer(
+                $soal['jawaban']
+                ?? null
+            );
+
+        if (!$jawaban) {
+            return
+                'Silakan pilih jawaban yang benar (A, B, C, atau D).';
+        }
+
+
+        return null;
     }
 
 
@@ -114,15 +311,19 @@ class KuisController extends Controller
 
     public function index()
     {
-        $kuis = Kuis::with('detailKuis')
-            ->where('status', 'aktif')
-            ->get();
+        $kuis =
+            Kuis::with('detailKuis')
+                ->where('status', 'aktif')
+                ->get();
 
         $formatted = [];
 
         foreach ($kuis as $item) {
 
-            foreach ($item->detailKuis as $detail) {
+            foreach (
+                $item->detailKuis
+                as $detail
+            ) {
 
                 $data =
                     $this->formatDetail(
@@ -164,12 +365,11 @@ class KuisController extends Controller
             DetailKuis::where(
                 'id_kuis',
                 $id
-            )->inRandomOrder();
+            )
+            ->inRandomOrder();
 
         if ($jmlSoal) {
-            $query->limit(
-                $jmlSoal
-            );
+            $query->limit($jmlSoal);
         }
 
         $soal =
@@ -178,7 +378,6 @@ class KuisController extends Controller
         $formatted =
             $soal->map(
                 function ($item) {
-
                     return $this->formatDetail(
                         $item
                     );
@@ -217,14 +416,12 @@ class KuisController extends Controller
     public function adminIndex()
     {
         $kuis =
-            Kuis::with(
-                'detailKuis'
-            )
-            ->orderBy(
-                'id_kuis',
-                'desc'
-            )
-            ->get();
+            Kuis::with('detailKuis')
+                ->orderBy(
+                    'id_kuis',
+                    'desc'
+                )
+                ->get();
 
         $kuis->each(
             function ($item) {
@@ -232,7 +429,12 @@ class KuisController extends Controller
                 $item->detailKuis->each(
                     function ($detail) {
 
-                        // Simpan PATH asli
+                        /*
+                        |--------------------------------------------------------------------------
+                        | PATH ASLI
+                        |--------------------------------------------------------------------------
+                        */
+
                         $detail->gambar_pertanyaan_path =
                             $detail->gambar_pertanyaan;
 
@@ -249,7 +451,12 @@ class KuisController extends Controller
                             $detail->gambar_pilihan_d;
 
 
-                        // Ubah menjadi URL
+                        /*
+                        |--------------------------------------------------------------------------
+                        | URL GAMBAR
+                        |--------------------------------------------------------------------------
+                        */
+
                         $detail->gambar_pertanyaan =
                             $this->imageUrl(
                                 $detail->gambar_pertanyaan
@@ -291,10 +498,7 @@ class KuisController extends Controller
 
     private function storeImage($file)
     {
-        if (
-            !$file ||
-            !($file instanceof UploadedFile)
-        ) {
+        if (!$file) {
             return null;
         }
 
@@ -306,196 +510,6 @@ class KuisController extends Controller
 
 
     // =====================================================
-    // CEK APAKAH ADA FILE GAMBAR
-    // =====================================================
-
-    private function hasUploadedImage(
-        Request $request,
-        $field
-    ) {
-        $file =
-            $request->file($field);
-
-        return
-            $file instanceof UploadedFile;
-    }
-
-
-    // =====================================================
-    // VALIDASI ISI SOAL
-    //
-    // TEKS BOLEH KOSONG JIKA ADA GAMBAR
-    // =====================================================
-
-    private function validateQuestionContent(
-        Request $request,
-        $index,
-        $soal
-    ) {
-
-        // =================================================
-        // PERTANYAAN
-        // =================================================
-
-        $pertanyaan =
-            trim(
-                $soal['pertanyaan']
-                ?? ''
-            );
-
-        $adaGambarPertanyaan =
-            $this->hasUploadedImage(
-                $request,
-                "soal.$index.gambar_pertanyaan"
-            );
-
-        if (
-            $pertanyaan === '' &&
-            !$adaGambarPertanyaan
-        ) {
-
-            return
-                'Pertanyaan harus diisi atau diberikan gambar.';
-        }
-
-
-        // =================================================
-        // PILIHAN A-D
-        // =================================================
-
-        foreach (
-            ['A', 'B', 'C', 'D']
-            as $option
-        ) {
-
-            $text =
-                trim(
-                    $soal['pilihan'][$option]
-                    ?? ''
-                );
-
-            $adaGambar =
-                $this->hasUploadedImage(
-                    $request,
-                    "soal.$index.gambar_pilihan.$option"
-                );
-
-            if (
-                $text === '' &&
-                !$adaGambar
-            ) {
-
-                return
-                    "Pilihan $option harus diisi atau diberikan gambar.";
-            }
-        }
-
-        return null;
-    }
-
-
-    // =====================================================
-    // VALIDASI SOAL UNTUK EDIT
-    // =====================================================
-
-    private function validateQuestionContentUpdate(
-        Request $request,
-        $index,
-        $soal,
-        $detailLama
-    ) {
-
-        // =================================================
-        // PERTANYAAN
-        // =================================================
-
-        $pertanyaan =
-            trim(
-                $soal['pertanyaan']
-                ?? ''
-            );
-
-        $adaGambarBaru =
-            $this->hasUploadedImage(
-                $request,
-                "soal.$index.gambar_pertanyaan"
-            );
-
-        $adaGambarLama =
-            $detailLama &&
-            !empty(
-                $detailLama->gambar_pertanyaan
-            ) &&
-            empty(
-                $soal['hapus_gambar_pertanyaan']
-                ?? false
-            );
-
-        if (
-            $pertanyaan === '' &&
-            !$adaGambarBaru &&
-            !$adaGambarLama
-        ) {
-
-            return
-                'Pertanyaan harus diisi atau diberikan gambar.';
-        }
-
-
-        // =================================================
-        // PILIHAN A-D
-        // =================================================
-
-        foreach (
-            ['A', 'B', 'C', 'D']
-            as $option
-        ) {
-
-            $text =
-                trim(
-                    $soal['pilihan'][$option]
-                    ?? ''
-                );
-
-            $adaGambarBaru =
-                $this->hasUploadedImage(
-                    $request,
-                    "soal.$index.gambar_pilihan.$option"
-                );
-
-            $field =
-                'gambar_pilihan_' .
-                strtolower($option);
-
-            $hapusGambar =
-                $soal[
-                    'hapus_gambar_pilihan'
-                ][$option]
-                ?? false;
-
-            $adaGambarLama =
-                $detailLama &&
-                !empty(
-                    $detailLama->$field
-                ) &&
-                !$hapusGambar;
-
-            if (
-                $text === '' &&
-                !$adaGambarBaru &&
-                !$adaGambarLama
-            ) {
-
-                return
-                    "Pilihan $option harus diisi atau diberikan gambar.";
-            }
-        }
-
-        return null;
-    }
-
-
-    // =====================================================
     // TAMBAH KUIS
     // =====================================================
 
@@ -503,12 +517,13 @@ class KuisController extends Controller
         Request $request
     ) {
 
-        // =================================================
-        // VALIDASI DASAR
-        // =================================================
+        /*
+        |--------------------------------------------------------------------------
+        | VALIDASI DASAR
+        |--------------------------------------------------------------------------
+        */
 
         $request->validate([
-
             'judul' =>
                 'required|string',
 
@@ -533,8 +548,18 @@ class KuisController extends Controller
             'soal.*.pilihan.D' =>
                 'nullable|string',
 
+            /*
+            |--------------------------------------------------------------------------
+            | PENTING
+            |--------------------------------------------------------------------------
+            |
+            | Jangan menggunakan required|in di sini.
+            | Kita normalisasi dan validasi secara manual.
+            |
+            */
+
             'soal.*.jawaban' =>
-                'required|in:A,B,C,D',
+                'nullable',
 
             'soal.*.gambar_pertanyaan' =>
                 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
@@ -553,9 +578,11 @@ class KuisController extends Controller
         ]);
 
 
-        // =================================================
-        // VALIDASI TEKS / GAMBAR
-        // =================================================
+        /*
+        |--------------------------------------------------------------------------
+        | VALIDASI SETIAP SOAL
+        |--------------------------------------------------------------------------
+        */
 
         foreach (
             $request->soal
@@ -574,18 +601,25 @@ class KuisController extends Controller
                 return response()->json([
                     'message' =>
                         $error,
+
+                    'field' =>
+                        "soal.$index",
+
+                    'soal_index' =>
+                        $index,
                 ], 422);
             }
         }
 
 
-        // =================================================
-        // BUAT KUIS
-        // =================================================
+        /*
+        |--------------------------------------------------------------------------
+        | BUAT KUIS
+        |--------------------------------------------------------------------------
+        */
 
         $kuis =
             Kuis::create([
-
                 'id_guru' =>
                     1,
 
@@ -599,30 +633,32 @@ class KuisController extends Controller
                     $request->status,
 
                 'total_soal' =>
-                    count(
-                        $request->soal
-                    ),
+                    count($request->soal),
             ]);
 
 
-        // =================================================
-        // SIMPAN SOAL
-        // =================================================
+        /*
+        |--------------------------------------------------------------------------
+        | SIMPAN SEMUA SOAL
+        |--------------------------------------------------------------------------
+        */
 
         foreach (
             $request->soal
             as $index => $s
         ) {
 
-            // =============================================
-            // GAMBAR PERTANYAAN
-            // =============================================
+            /*
+            |--------------------------------------------------------------------------
+            | GAMBAR PERTANYAAN
+            |--------------------------------------------------------------------------
+            */
 
-            $gambarPertanyaan = null;
+            $gambarPertanyaan =
+                null;
 
             if (
-                $this->hasUploadedImage(
-                    $request,
+                $request->hasFile(
                     "soal.$index.gambar_pertanyaan"
                 )
             ) {
@@ -636,97 +672,59 @@ class KuisController extends Controller
             }
 
 
-            // =============================================
-            // GAMBAR PILIHAN A
-            // =============================================
+            /*
+            |--------------------------------------------------------------------------
+            | GAMBAR A-D
+            |--------------------------------------------------------------------------
+            */
 
-            $gambarA = null;
-
-            if (
-                $this->hasUploadedImage(
+            $gambarA =
+                $this->storeOptionImage(
                     $request,
-                    "soal.$index.gambar_pilihan.A"
-                )
-            ) {
+                    $index,
+                    'A'
+                );
 
-                $gambarA =
-                    $this->storeImage(
-                        $request->file(
-                            "soal.$index.gambar_pilihan.A"
-                        )
-                    );
-            }
-
-
-            // =============================================
-            // GAMBAR PILIHAN B
-            // =============================================
-
-            $gambarB = null;
-
-            if (
-                $this->hasUploadedImage(
+            $gambarB =
+                $this->storeOptionImage(
                     $request,
-                    "soal.$index.gambar_pilihan.B"
-                )
-            ) {
+                    $index,
+                    'B'
+                );
 
-                $gambarB =
-                    $this->storeImage(
-                        $request->file(
-                            "soal.$index.gambar_pilihan.B"
-                        )
-                    );
-            }
-
-
-            // =============================================
-            // GAMBAR PILIHAN C
-            // =============================================
-
-            $gambarC = null;
-
-            if (
-                $this->hasUploadedImage(
+            $gambarC =
+                $this->storeOptionImage(
                     $request,
-                    "soal.$index.gambar_pilihan.C"
-                )
-            ) {
+                    $index,
+                    'C'
+                );
 
-                $gambarC =
-                    $this->storeImage(
-                        $request->file(
-                            "soal.$index.gambar_pilihan.C"
-                        )
-                    );
-            }
-
-
-            // =============================================
-            // GAMBAR PILIHAN D
-            // =============================================
-
-            $gambarD = null;
-
-            if (
-                $this->hasUploadedImage(
+            $gambarD =
+                $this->storeOptionImage(
                     $request,
-                    "soal.$index.gambar_pilihan.D"
-                )
-            ) {
-
-                $gambarD =
-                    $this->storeImage(
-                        $request->file(
-                            "soal.$index.gambar_pilihan.D"
-                        )
-                    );
-            }
+                    $index,
+                    'D'
+                );
 
 
-            // =============================================
-            // SIMPAN DETAIL SOAL
-            // =============================================
+            /*
+            |--------------------------------------------------------------------------
+            | NORMALISASI JAWABAN
+            |--------------------------------------------------------------------------
+            */
+
+            $jawaban =
+                $this->normalizeAnswer(
+                    $s['jawaban']
+                    ?? null
+                );
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | SIMPAN DETAIL
+            |--------------------------------------------------------------------------
+            */
 
             DetailKuis::create([
 
@@ -768,8 +766,14 @@ class KuisController extends Controller
                 'gambar_pilihan_d' =>
                     $gambarD,
 
+                /*
+                |--------------------------------------------------------------------------
+                | YANG DISIMPAN HANYA A/B/C/D
+                |--------------------------------------------------------------------------
+                */
+
                 'jawaban' =>
-                    $s['jawaban'],
+                    $jawaban,
 
                 'poin' =>
                     10,
@@ -777,19 +781,38 @@ class KuisController extends Controller
         }
 
 
-        // =================================================
-        // RESPONSE
-        // =================================================
-
         return response()->json([
-
             'message' =>
                 'Kuis berhasil ditambahkan',
 
             'data' =>
                 $kuis,
-
         ], 201);
+    }
+
+
+    // =====================================================
+    // HELPER SIMPAN GAMBAR PILIHAN
+    // =====================================================
+
+    private function storeOptionImage(
+        Request $request,
+        $index,
+        $option
+    ) {
+
+        $field =
+            "soal.$index.gambar_pilihan.$option";
+
+        if (
+            !$request->hasFile($field)
+        ) {
+            return null;
+        }
+
+        return $this->storeImage(
+            $request->file($field)
+        );
     }
 
 
@@ -803,7 +826,6 @@ class KuisController extends Controller
             Kuis::with(
                 'detailKuis'
             )->findOrFail($id);
-
 
         $kuis->detailKuis->each(
             function ($detail) {
@@ -835,7 +857,6 @@ class KuisController extends Controller
             }
         );
 
-
         return response()->json(
             $kuis
         );
@@ -855,9 +876,11 @@ class KuisController extends Controller
             Kuis::findOrFail($id);
 
 
-        // =================================================
-        // VALIDASI DASAR
-        // =================================================
+        /*
+        |--------------------------------------------------------------------------
+        | VALIDASI DASAR
+        |--------------------------------------------------------------------------
+        */
 
         $request->validate([
 
@@ -885,8 +908,14 @@ class KuisController extends Controller
             'soal.*.pilihan.D' =>
                 'nullable|string',
 
+            /*
+            |--------------------------------------------------------------------------
+            | TIDAK REQUIRED DI SINI
+            |--------------------------------------------------------------------------
+            */
+
             'soal.*.jawaban' =>
-                'required|in:A,B,C,D',
+                'nullable',
 
             'soal.*.gambar_pertanyaan' =>
                 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
@@ -905,9 +934,11 @@ class KuisController extends Controller
         ]);
 
 
-        // =================================================
-        // VALIDASI SETIAP SOAL
-        // =================================================
+        /*
+        |--------------------------------------------------------------------------
+        | VALIDASI SOAL
+        |--------------------------------------------------------------------------
+        */
 
         foreach (
             $request->soal
@@ -915,48 +946,137 @@ class KuisController extends Controller
         ) {
 
             $idDetail =
-                $soal[
-                    'id_detail_kuis'
-                ]
+                $soal['id_detail_kuis']
                 ?? null;
-
 
             $detailLama =
                 $idDetail
-                    ? DetailKuis::where(
-                        'id_detail_kuis',
-                        $idDetail
-                    )
-                    ->where(
-                        'id_kuis',
-                        $id
-                    )
-                    ->first()
+                    ? DetailKuis::find($idDetail)
                     : null;
 
 
-            $error =
-                $this->validateQuestionContentUpdate(
-                    $request,
-                    $index,
-                    $soal,
-                    $detailLama
+            /*
+            |--------------------------------------------------------------------------
+            | PERTANYAAN
+            |--------------------------------------------------------------------------
+            */
+
+            $pertanyaan =
+                trim(
+                    $soal['pertanyaan']
+                    ?? ''
                 );
 
+            $hasNewQuestionImage =
+                $request->hasFile(
+                    "soal.$index.gambar_pertanyaan"
+                );
 
-            if ($error) {
+            $hasOldQuestionImage =
+                $detailLama &&
+                !empty(
+                    $detailLama->gambar_pertanyaan
+                ) &&
+                empty(
+                    $soal[
+                        'hapus_gambar_pertanyaan'
+                    ] ?? false
+                );
+
+            if (
+                $pertanyaan === '' &&
+                !$hasNewQuestionImage &&
+                !$hasOldQuestionImage
+            ) {
 
                 return response()->json([
                     'message' =>
-                        $error,
+                        'Pertanyaan harus diisi atau diberikan gambar.',
+                ], 422);
+            }
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | PILIHAN A-D
+            |--------------------------------------------------------------------------
+            */
+
+            foreach (
+                ['A', 'B', 'C', 'D']
+                as $option
+            ) {
+
+                $text =
+                    trim(
+                        $soal['pilihan'][$option]
+                        ?? ''
+                    );
+
+                $hasNewImage =
+                    $request->hasFile(
+                        "soal.$index.gambar_pilihan.$option"
+                    );
+
+                $field =
+                    'gambar_pilihan_' .
+                    strtolower($option);
+
+                $hasOldImage =
+                    $detailLama &&
+                    !empty(
+                        $detailLama->$field
+                    ) &&
+                    empty(
+                        $soal[
+                            'hapus_gambar_pilihan'
+                        ][$option]
+                        ?? false
+                    );
+
+                if (
+                    $text === '' &&
+                    !$hasNewImage &&
+                    !$hasOldImage
+                ) {
+
+                    return response()->json([
+                        'message' =>
+                            "Pilihan $option harus diisi atau diberikan gambar.",
+                    ], 422);
+                }
+            }
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | JAWABAN
+            |--------------------------------------------------------------------------
+            */
+
+            $jawaban =
+                $this->normalizeAnswer(
+                    $soal['jawaban']
+                    ?? null
+                );
+
+            if (!$jawaban) {
+
+                return response()->json([
+                    'message' =>
+                        "Soal nomor " .
+                        ($index + 1) .
+                        " belum memiliki jawaban benar. Silakan pilih A, B, C, atau D.",
                 ], 422);
             }
         }
 
 
-        // =================================================
-        // UPDATE DATA KUIS
-        // =================================================
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE KUIS
+        |--------------------------------------------------------------------------
+        */
 
         $kuis->update([
 
@@ -970,42 +1090,41 @@ class KuisController extends Controller
                 $request->status,
 
             'total_soal' =>
-                count(
-                    $request->soal
-                ),
+                count($request->soal),
         ]);
 
 
-        // =================================================
-        // ID SOAL YANG MASIH DIGUNAKAN
-        // =================================================
+        /*
+        |--------------------------------------------------------------------------
+        | ID SOAL YANG MASIH DIPAKAI
+        |--------------------------------------------------------------------------
+        */
 
         $submittedIds =
-            collect(
-                $request->soal
-            )
-            ->pluck(
-                'id_detail_kuis'
-            )
-            ->filter()
-            ->map(
-                fn ($id) =>
-                    (int) $id
-            )
-            ->values()
-            ->toArray();
+            collect($request->soal)
+                ->pluck(
+                    'id_detail_kuis'
+                )
+                ->filter()
+                ->map(
+                    fn ($id) =>
+                        (int) $id
+                )
+                ->values()
+                ->toArray();
 
 
-        // =================================================
-        // HAPUS SOAL YANG DIHILANGKAN
-        // =================================================
+        /*
+        |--------------------------------------------------------------------------
+        | HAPUS SOAL YANG DIHILANGKAN
+        |--------------------------------------------------------------------------
+        */
 
         $soalLama =
             DetailKuis::where(
                 'id_kuis',
                 $id
             )->get();
-
 
         foreach (
             $soalLama
@@ -1014,8 +1133,7 @@ class KuisController extends Controller
 
             if (
                 !in_array(
-                    (int)
-                    $lama->id_detail_kuis,
+                    (int) $lama->id_detail_kuis,
                     $submittedIds
                 )
             ) {
@@ -1029,9 +1147,11 @@ class KuisController extends Controller
         }
 
 
-        // =================================================
-        // UPDATE / TAMBAH SOAL
-        // =================================================
+        /*
+        |--------------------------------------------------------------------------
+        | UPDATE / TAMBAH SOAL
+        |--------------------------------------------------------------------------
+        */
 
         foreach (
             $request->soal
@@ -1039,15 +1159,15 @@ class KuisController extends Controller
         ) {
 
             $idDetail =
-                $s[
-                    'id_detail_kuis'
-                ]
+                $s['id_detail_kuis']
                 ?? null;
 
 
-            // =================================================
-            // SOAL LAMA
-            // =================================================
+            /*
+            |--------------------------------------------------------------------------
+            | SOAL LAMA
+            |--------------------------------------------------------------------------
+            */
 
             if ($idDetail) {
 
@@ -1063,15 +1183,15 @@ class KuisController extends Controller
                     ->firstOrFail();
 
 
-                // =============================================
-                // GAMBAR PERTANYAAN
-                // =============================================
+                /*
+                |--------------------------------------------------------------------------
+                | GAMBAR PERTANYAAN
+                |--------------------------------------------------------------------------
+                */
 
                 $gambarPertanyaan =
                     $detail->gambar_pertanyaan;
 
-
-                // HAPUS GAMBAR LAMA
                 if (
                     !empty(
                         $s[
@@ -1094,10 +1214,8 @@ class KuisController extends Controller
                 }
 
 
-                // GANTI / TAMBAH GAMBAR
                 if (
-                    $this->hasUploadedImage(
-                        $request,
+                    $request->hasFile(
                         "soal.$index.gambar_pertanyaan"
                     )
                 ) {
@@ -1111,7 +1229,6 @@ class KuisController extends Controller
                         );
                     }
 
-
                     $gambarPertanyaan =
                         $this->storeImage(
                             $request->file(
@@ -1121,9 +1238,11 @@ class KuisController extends Controller
                 }
 
 
-                // =============================================
-                // GAMBAR PILIHAN A-D
-                // =============================================
+                /*
+                |--------------------------------------------------------------------------
+                | GAMBAR PILIHAN
+                |--------------------------------------------------------------------------
+                */
 
                 $gambarPilihan = [];
 
@@ -1135,76 +1254,63 @@ class KuisController extends Controller
 
                     $field =
                         'gambar_pilihan_' .
-                        strtolower(
-                            $option
-                        );
-
+                        strtolower($option);
 
                     $gambarPilihan[$option] =
                         $detail->$field;
 
 
-                    // =========================================
-                    // HAPUS GAMBAR
-                    // =========================================
+                    /*
+                    |--------------------------------------------------------------------------
+                    | HAPUS GAMBAR
+                    |--------------------------------------------------------------------------
+                    */
 
-                    $hapus =
-                        $s[
-                            'hapus_gambar_pilihan'
-                        ][$option]
-                        ?? false;
-
-
-                    if ($hapus) {
+                    if (
+                        !empty(
+                            $s[
+                                'hapus_gambar_pilihan'
+                            ][$option]
+                            ?? false
+                        )
+                    ) {
 
                         if (
-                            $gambarPilihan[
-                                $option
-                            ]
+                            $gambarPilihan[$option]
                         ) {
 
                             $this->deleteImage(
-                                $gambarPilihan[
-                                    $option
-                                ]
+                                $gambarPilihan[$option]
                             );
                         }
 
-
-                        $gambarPilihan[
-                            $option
-                        ] = null;
+                        $gambarPilihan[$option] =
+                            null;
                     }
 
 
-                    // =========================================
-                    // GANTI / TAMBAH GAMBAR
-                    // =========================================
+                    /*
+                    |--------------------------------------------------------------------------
+                    | GANTI GAMBAR
+                    |--------------------------------------------------------------------------
+                    */
 
                     if (
-                        $this->hasUploadedImage(
-                            $request,
+                        $request->hasFile(
                             "soal.$index.gambar_pilihan.$option"
                         )
                     ) {
 
                         if (
-                            $gambarPilihan[
-                                $option
-                            ]
+                            $gambarPilihan[$option]
                         ) {
 
                             $this->deleteImage(
-                                $gambarPilihan[
-                                    $option
-                                ]
+                                $gambarPilihan[$option]
                             );
                         }
 
-
-                        $gambarPilihan[
-                            $option
-                        ] =
+                        $gambarPilihan[$option] =
                             $this->storeImage(
                                 $request->file(
                                     "soal.$index.gambar_pilihan.$option"
@@ -1214,84 +1320,84 @@ class KuisController extends Controller
                 }
 
 
-                // =============================================
-                // UPDATE DETAIL SOAL
-                // =============================================
+                /*
+                |--------------------------------------------------------------------------
+                | JAWABAN
+                |--------------------------------------------------------------------------
+                */
+
+                $jawaban =
+                    $this->normalizeAnswer(
+                        $s['jawaban']
+                        ?? null
+                    );
+
+
+                /*
+                |--------------------------------------------------------------------------
+                | UPDATE DETAIL
+                |--------------------------------------------------------------------------
+                */
 
                 $detail->update([
 
                     'pertanyaan' =>
-                        $s[
-                            'pertanyaan'
-                        ]
+                        $s['pertanyaan']
                         ?? '',
 
                     'gambar_pertanyaan' =>
                         $gambarPertanyaan,
 
-
                     'pilihan_a' =>
-                        $s[
-                            'pilihan'
-                        ]['A']
+                        $s['pilihan']['A']
                         ?? '',
 
                     'gambar_pilihan_a' =>
                         $gambarPilihan['A'],
 
-
                     'pilihan_b' =>
-                        $s[
-                            'pilihan'
-                        ]['B']
+                        $s['pilihan']['B']
                         ?? '',
 
                     'gambar_pilihan_b' =>
                         $gambarPilihan['B'],
 
-
                     'pilihan_c' =>
-                        $s[
-                            'pilihan'
-                        ]['C']
+                        $s['pilihan']['C']
                         ?? '',
 
                     'gambar_pilihan_c' =>
                         $gambarPilihan['C'],
 
-
                     'pilihan_d' =>
-                        $s[
-                            'pilihan'
-                        ]['D']
+                        $s['pilihan']['D']
                         ?? '',
 
                     'gambar_pilihan_d' =>
                         $gambarPilihan['D'],
 
-
                     'jawaban' =>
-                        $s['jawaban'],
+                        $jawaban,
 
                     'poin' =>
                         10,
                 ]);
 
-
                 continue;
             }
 
 
-            // =================================================
-            // SOAL BARU SAAT EDIT
-            // =================================================
+            /*
+            |--------------------------------------------------------------------------
+            | SOAL BARU SAAT EDIT
+            |--------------------------------------------------------------------------
+            */
 
             $gambarPertanyaan =
                 null;
 
             if (
-                $this->hasUploadedImage(
-                    $request,
+                $request->hasFile(
                     "soal.$index.gambar_pertanyaan"
                 )
             ) {
@@ -1305,79 +1411,41 @@ class KuisController extends Controller
             }
 
 
-            $gambarA = null;
-            $gambarB = null;
-            $gambarC = null;
-            $gambarD = null;
-
-
-            if (
-                $this->hasUploadedImage(
+            $gambarA =
+                $this->storeOptionImage(
                     $request,
-                    "soal.$index.gambar_pilihan.A"
-                )
-            ) {
+                    $index,
+                    'A'
+                );
 
-                $gambarA =
-                    $this->storeImage(
-                        $request->file(
-                            "soal.$index.gambar_pilihan.A"
-                        )
-                    );
-            }
-
-
-            if (
-                $this->hasUploadedImage(
+            $gambarB =
+                $this->storeOptionImage(
                     $request,
-                    "soal.$index.gambar_pilihan.B"
-                )
-            ) {
+                    $index,
+                    'B'
+                );
 
-                $gambarB =
-                    $this->storeImage(
-                        $request->file(
-                            "soal.$index.gambar_pilihan.B"
-                        )
-                    );
-            }
-
-
-            if (
-                $this->hasUploadedImage(
+            $gambarC =
+                $this->storeOptionImage(
                     $request,
-                    "soal.$index.gambar_pilihan.C"
-                )
-            ) {
+                    $index,
+                    'C'
+                );
 
-                $gambarC =
-                    $this->storeImage(
-                        $request->file(
-                            "soal.$index.gambar_pilihan.C"
-                        )
-                    );
-            }
-
-
-            if (
-                $this->hasUploadedImage(
+            $gambarD =
+                $this->storeOptionImage(
                     $request,
-                    "soal.$index.gambar_pilihan.D"
-                )
-            ) {
-
-                $gambarD =
-                    $this->storeImage(
-                        $request->file(
-                            "soal.$index.gambar_pilihan.D"
-                        )
-                    );
-            }
+                    $index,
+                    'D'
+                );
 
 
-            // =============================================
-            // SIMPAN SOAL BARU
-            // =============================================
+            $jawaban =
+                $this->normalizeAnswer(
+                    $s['jawaban']
+                    ?? null
+                );
+
 
             DetailKuis::create([
 
@@ -1385,57 +1453,42 @@ class KuisController extends Controller
                     $id,
 
                 'pertanyaan' =>
-                    $s[
-                        'pertanyaan'
-                    ]
+                    $s['pertanyaan']
                     ?? '',
 
                 'gambar_pertanyaan' =>
                     $gambarPertanyaan,
 
-
                 'pilihan_a' =>
-                    $s[
-                        'pilihan'
-                    ]['A']
+                    $s['pilihan']['A']
                     ?? '',
 
                 'gambar_pilihan_a' =>
                     $gambarA,
 
-
                 'pilihan_b' =>
-                    $s[
-                        'pilihan'
-                    ]['B']
+                    $s['pilihan']['B']
                     ?? '',
 
                 'gambar_pilihan_b' =>
                     $gambarB,
 
-
                 'pilihan_c' =>
-                    $s[
-                        'pilihan'
-                    ]['C']
+                    $s['pilihan']['C']
                     ?? '',
 
                 'gambar_pilihan_c' =>
                     $gambarC,
 
-
                 'pilihan_d' =>
-                    $s[
-                        'pilihan'
-                    ]['D']
+                    $s['pilihan']['D']
                     ?? '',
 
                 'gambar_pilihan_d' =>
                     $gambarD,
 
-
                 'jawaban' =>
-                    $s['jawaban'],
+                    $jawaban,
 
                 'poin' =>
                     10,
@@ -1444,16 +1497,14 @@ class KuisController extends Controller
 
 
         return response()->json([
-
             'message' =>
                 'Kuis berhasil diperbarui',
-
         ]);
     }
 
 
     // =====================================================
-    // HAPUS SATU GAMBAR
+    // DELETE IMAGE
     // =====================================================
 
     private function deleteImage($path)
@@ -1471,7 +1522,7 @@ class KuisController extends Controller
 
 
     // =====================================================
-    // HAPUS SEMUA GAMBAR DETAIL
+    // DELETE SEMUA GAMBAR DETAIL
     // =====================================================
 
     private function deleteDetailImages(
@@ -1479,19 +1530,12 @@ class KuisController extends Controller
     ) {
 
         $fields = [
-
             'gambar_pertanyaan',
-
             'gambar_pilihan_a',
-
             'gambar_pilihan_b',
-
             'gambar_pilihan_c',
-
             'gambar_pilihan_d',
-
         ];
-
 
         foreach (
             $fields
@@ -1519,13 +1563,11 @@ class KuisController extends Controller
         $kuis =
             Kuis::findOrFail($id);
 
-
         $detail =
             DetailKuis::where(
                 'id_kuis',
                 $id
             )->get();
-
 
         foreach (
             $detail
@@ -1537,21 +1579,16 @@ class KuisController extends Controller
             );
         }
 
-
         DetailKuis::where(
             'id_kuis',
             $id
         )->delete();
 
-
         $kuis->delete();
 
-
         return response()->json([
-
             'message' =>
                 'Kuis berhasil dihapus',
-
         ]);
     }
 
@@ -1571,48 +1608,34 @@ class KuisController extends Controller
                 $idKuis
             )->count();
 
-
         $request->validate([
-
             'jml_soal' => [
-
                 'required',
-
                 'integer',
-
                 'min:1',
-
                 'max:' . $totalSoal,
             ],
         ]);
 
-
         $setting =
             JumlahSoal::first();
 
-
         if (!$setting) {
-
             $setting =
                 new JumlahSoal();
         }
 
-
         $setting->jml_soal =
             $request->jml_soal;
 
-
         $setting->save();
 
-
         return response()->json([
-
             'message' =>
                 'Jumlah soal berhasil diperbarui',
 
             'jml_soal' =>
                 $setting->jml_soal,
-
         ]);
     }
 
@@ -1626,7 +1649,6 @@ class KuisController extends Controller
     ) {
 
         $request->validate([
-
             'id_siswa' =>
                 'required',
 
@@ -1635,19 +1657,16 @@ class KuisController extends Controller
 
             'jawaban' =>
                 'required|array',
-
         ]);
 
 
         $jumlahBenar =
             0;
 
-
         $jumlahSoal =
             count(
                 $request->jawaban
             );
-
 
         $detailTerakhir =
             null;
@@ -1660,39 +1679,56 @@ class KuisController extends Controller
 
             $detail =
                 DetailKuis::find(
-                    $item[
-                        'id_detail_kuis'
-                    ]
+                    $item['id_detail_kuis']
                 );
-
 
             if (!$detail) {
                 continue;
             }
 
-
             $detailTerakhir =
                 $detail;
-
 
             $point =
                 0;
 
 
+            /*
+            |--------------------------------------------------------------------------
+            | NORMALISASI JAWABAN SISWA
+            |--------------------------------------------------------------------------
+            */
+
+            $jawabanSiswa =
+                $this->normalizeAnswer(
+                    $item['jawaban_siswa']
+                    ?? null
+                );
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | CEK BENAR
+            |--------------------------------------------------------------------------
+            */
+
             if (
-                $item[
-                    'jawaban_siswa'
-                ]
-                ==
+                $jawabanSiswa &&
+                $jawabanSiswa ===
                 $detail->jawaban
             ) {
 
                 $jumlahBenar++;
 
-                $point =
-                    10;
+                $point = 10;
             }
 
+
+            /*
+            |--------------------------------------------------------------------------
+            | SIMPAN JAWABAN SISWA
+            |--------------------------------------------------------------------------
+            */
 
             JawabanSiswa::create([
 
@@ -1703,24 +1739,22 @@ class KuisController extends Controller
                     $request->id_siswa,
 
                 'jawaban_siswa' =>
-                    $item[
-                        'jawaban_siswa'
-                    ],
+                    $jawabanSiswa,
 
                 'perolehan_point' =>
                     $point,
-
             ]);
         }
 
 
-        // =================================================
-        // HITUNG NILAI
-        // =================================================
+        /*
+        |--------------------------------------------------------------------------
+        | HITUNG NILAI
+        |--------------------------------------------------------------------------
+        */
 
         $nilai =
             0;
-
 
         if (
             $jumlahSoal > 0
@@ -1728,22 +1762,20 @@ class KuisController extends Controller
 
             $nilai =
                 round(
-
                     (
-                        $jumlahBenar
-                        /
+                        $jumlahBenar /
                         $jumlahSoal
-                    )
-                    * 100,
-
+                    ) * 100,
                     2
                 );
         }
 
 
-        // =================================================
-        // JAWABAN TERAKHIR
-        // =================================================
+        /*
+        |--------------------------------------------------------------------------
+        | JAWABAN TERAKHIR
+        |--------------------------------------------------------------------------
+        */
 
         $jawabanTerakhir =
             JawabanSiswa::where(
@@ -1754,9 +1786,11 @@ class KuisController extends Controller
             ->first();
 
 
-        // =================================================
-        // SIMPAN PEROLEHAN NILAI
-        // =================================================
+        /*
+        |--------------------------------------------------------------------------
+        | SIMPAN NILAI
+        |--------------------------------------------------------------------------
+        */
 
         if (
             $detailTerakhir &&
@@ -1777,14 +1811,9 @@ class KuisController extends Controller
 
                 'total_nilai' =>
                     $nilai,
-
             ]);
         }
 
-
-        // =================================================
-        // RESPONSE
-        // =================================================
 
         return response()->json([
 
@@ -1799,7 +1828,6 @@ class KuisController extends Controller
 
             'jumlah_soal' =>
                 $jumlahSoal,
-
         ]);
     }
 }
