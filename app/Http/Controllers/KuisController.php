@@ -28,6 +28,7 @@ class KuisController extends Controller
 
     // =====================================================
     // FORMAT DETAIL SOAL
+    // Digunakan untuk kuis siswa
     // =====================================================
     private function formatDetail($detail)
     {
@@ -97,6 +98,68 @@ class KuisController extends Controller
 
 
     // =====================================================
+    // FORMAT DETAIL SOAL UNTUK ADMIN
+    // =====================================================
+    private function formatAdminDetail($detail)
+    {
+        return [
+
+            'id_detail_kuis' =>
+                $detail->id_detail_kuis,
+
+            'id_kuis' =>
+                $detail->id_kuis,
+
+            'pertanyaan' =>
+                $detail->pertanyaan,
+
+            'gambar_pertanyaan' =>
+                $this->imageUrl(
+                    $detail->gambar_pertanyaan
+                ),
+
+            'pilihan_a' =>
+                $detail->pilihan_a,
+
+            'gambar_pilihan_a' =>
+                $this->imageUrl(
+                    $detail->gambar_pilihan_a
+                ),
+
+            'pilihan_b' =>
+                $detail->pilihan_b,
+
+            'gambar_pilihan_b' =>
+                $this->imageUrl(
+                    $detail->gambar_pilihan_b
+                ),
+
+            'pilihan_c' =>
+                $detail->pilihan_c,
+
+            'gambar_pilihan_c' =>
+                $this->imageUrl(
+                    $detail->gambar_pilihan_c
+                ),
+
+            'pilihan_d' =>
+                $detail->pilihan_d,
+
+            'gambar_pilihan_d' =>
+                $this->imageUrl(
+                    $detail->gambar_pilihan_d
+                ),
+
+            'jawaban' =>
+                $detail->jawaban,
+
+            'poin' =>
+                $detail->poin,
+        ];
+    }
+
+
+    // =====================================================
     // DATA KUIS SISWA
     // =====================================================
     public function index()
@@ -111,7 +174,8 @@ class KuisController extends Controller
 
             foreach ($item->detailKuis as $detail) {
 
-                $data = $this->formatDetail($detail);
+                $data =
+                    $this->formatDetail($detail);
 
                 $data['judul_kuis'] =
                     $item->judul;
@@ -120,7 +184,9 @@ class KuisController extends Controller
             }
         }
 
-        return response()->json($formatted);
+        return response()->json(
+            $formatted
+        );
     }
 
 
@@ -129,29 +195,38 @@ class KuisController extends Controller
     // =====================================================
     public function soalByKuis($id)
     {
-        $setting = JumlahSoal::first();
+        $setting =
+            JumlahSoal::first();
 
-        $jmlSoal = $setting
-            ? $setting->jml_soal
-            : null;
+        $jmlSoal =
+            $setting
+                ? $setting->jml_soal
+                : null;
 
-        $query = DetailKuis::where(
-            'id_kuis',
-            $id
-        )->inRandomOrder();
+        $query =
+            DetailKuis::where(
+                'id_kuis',
+                $id
+            )->inRandomOrder();
 
         if ($jmlSoal) {
 
-            $query->limit($jmlSoal);
+            $query->limit(
+                $jmlSoal
+            );
         }
 
-        $soal = $query->get();
+        $soal =
+            $query->get();
 
-        $formatted = $soal->map(function ($item) {
+        $formatted =
+            $soal->map(function ($item) {
 
-            return $this->formatDetail($item);
+                return $this->formatDetail(
+                    $item
+                );
 
-        });
+            });
 
         return response()->json(
             $formatted->values()
@@ -182,17 +257,42 @@ class KuisController extends Controller
     // =====================================================
     public function adminIndex()
     {
-        $kuis = Kuis::with(
-            'detailKuis'
-        )
-        ->orderBy(
-            'id_kuis',
-            'desc'
-        )
-        ->get();
+        $kuis =
+            Kuis::with('detailKuis')
+                ->orderBy(
+                    'id_kuis',
+                    'desc'
+                )
+                ->get();
+
+        /*
+        |--------------------------------------------------------------------------
+        | Ubah path gambar menjadi URL lengkap
+        |--------------------------------------------------------------------------
+        */
+        $formatted =
+            $kuis->map(function ($item) {
+
+                $data =
+                    $item->toArray();
+
+                $data['detail_kuis'] =
+                    $item->detailKuis
+                        ->map(function ($detail) {
+
+                            return $this->formatAdminDetail(
+                                $detail
+                            );
+
+                        })
+                        ->values()
+                        ->toArray();
+
+                return $data;
+            });
 
         return response()->json(
-            $kuis
+            $formatted->values()
         );
     }
 
@@ -296,7 +396,10 @@ class KuisController extends Controller
         // =================================================
         // SIMPAN SOAL
         // =================================================
-        foreach ($request->soal as $index => $s) {
+        foreach (
+            $request->soal
+            as $index => $s
+        ) {
 
             // ---------------------------------------------
             // GAMBAR SOAL
@@ -462,9 +565,10 @@ class KuisController extends Controller
     // =====================================================
     public function show($id)
     {
-        $kuis = Kuis::with(
-            'detailKuis'
-        )->findOrFail($id);
+        $kuis =
+            Kuis::with(
+                'detailKuis'
+            )->findOrFail($id);
 
         return response()->json(
             $kuis
@@ -480,7 +584,8 @@ class KuisController extends Controller
         $id
     ) {
 
-        $kuis = Kuis::findOrFail($id);
+        $kuis =
+            Kuis::findOrFail($id);
 
         $request->validate([
 
@@ -527,39 +632,46 @@ class KuisController extends Controller
 
 
         // =================================================
-        // HAPUS DETAIL LAMA
+        // HAPUS GAMBAR LAMA
         // =================================================
-        foreach ($soalLama as $lama) {
+        foreach (
+            $soalLama as $lama
+        ) {
 
             $gambarFields = [
 
                 'gambar_pertanyaan',
-
                 'gambar_pilihan_a',
-
                 'gambar_pilihan_b',
-
                 'gambar_pilihan_c',
-
                 'gambar_pilihan_d',
 
             ];
 
-            foreach ($gambarFields as $field) {
+            foreach (
+                $gambarFields as $field
+            ) {
 
                 if (
                     $lama->$field &&
                     Storage::disk('public')
-                        ->exists($lama->$field)
+                        ->exists(
+                            $lama->$field
+                        )
                 ) {
 
                     Storage::disk('public')
-                        ->delete($lama->$field);
+                        ->delete(
+                            $lama->$field
+                        );
                 }
             }
         }
 
 
+        // =================================================
+        // HAPUS DETAIL LAMA
+        // =================================================
         DetailKuis::where(
             'id_kuis',
             $id
@@ -574,9 +686,6 @@ class KuisController extends Controller
             as $index => $s
         ) {
 
-            // ---------------------------------------------
-            // GAMBAR
-            // ---------------------------------------------
             $gambarPertanyaan = null;
             $gambarA = null;
             $gambarB = null;
@@ -720,7 +829,8 @@ class KuisController extends Controller
     // =====================================================
     public function destroy($id)
     {
-        $kuis = Kuis::findOrFail($id);
+        $kuis =
+            Kuis::findOrFail($id);
 
         $detail =
             DetailKuis::where(
@@ -729,32 +839,36 @@ class KuisController extends Controller
             )->get();
 
 
-        foreach ($detail as $item) {
+        foreach (
+            $detail as $item
+        ) {
 
             $fields = [
 
                 'gambar_pertanyaan',
-
                 'gambar_pilihan_a',
-
                 'gambar_pilihan_b',
-
                 'gambar_pilihan_c',
-
                 'gambar_pilihan_d',
 
             ];
 
-            foreach ($fields as $field) {
+            foreach (
+                $fields as $field
+            ) {
 
                 if (
                     $item->$field &&
                     Storage::disk('public')
-                        ->exists($item->$field)
+                        ->exists(
+                            $item->$field
+                        )
                 ) {
 
                     Storage::disk('public')
-                        ->delete($item->$field);
+                        ->delete(
+                            $item->$field
+                        );
                 }
             }
         }
@@ -859,8 +973,8 @@ class KuisController extends Controller
         $jumlahSoal =
             count($request->jawaban);
 
-
         $detailTerakhir = null;
+
 
         foreach (
             $request->jawaban
@@ -880,7 +994,6 @@ class KuisController extends Controller
 
             $detailTerakhir =
                 $detail;
-
 
             $point = 0;
 
@@ -916,25 +1029,21 @@ class KuisController extends Controller
 
 
         // =================================================
-        // NILAI BERDASARKAN SOAL YANG DIKERJAKAN
+        // NILAI
         // =================================================
         $nilai = 0;
 
-
         if ($jumlahSoal > 0) {
 
-            $nilai = round(
-
-                (
-                    $jumlahBenar
-                    /
-                    $jumlahSoal
-                )
-                *
-                100,
-
-                2
-            );
+            $nilai =
+                round(
+                    (
+                        $jumlahBenar
+                        /
+                        $jumlahSoal
+                    ) * 100,
+                    2
+                );
         }
 
 
