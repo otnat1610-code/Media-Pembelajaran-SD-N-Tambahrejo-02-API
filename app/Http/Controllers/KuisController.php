@@ -146,15 +146,6 @@ class KuisController extends Controller
     // =====================================================
     // AMBIL FILE GAMBAR
     // =====================================================
-    /*
-     * Ini bagian yang diperbaiki.
-     *
-     * File diambil langsung dari:
-     *
-     * $request->file('soal')
-     *
-     * bukan hanya mengandalkan hasFile()
-     */
 
     private function getQuestionImage(
         Request $request,
@@ -258,7 +249,6 @@ class KuisController extends Controller
             return 'Pertanyaan harus diisi atau diberikan gambar.';
         }
 
-
         foreach (
             ['A', 'B', 'C', 'D'] as $option
         ) {
@@ -275,11 +265,6 @@ class KuisController extends Controller
 
             $hasImage =
                 $gambarPilihan !== null;
-
-
-            /*
-             * Saat edit, gambar lama tetap dianggap tersedia
-             */
 
             $idDetail =
                 $soal['id_detail_kuis']
@@ -313,7 +298,6 @@ class KuisController extends Controller
                     "Pilihan $option harus diisi atau diberikan gambar.";
             }
         }
-
 
         $jawaban =
             $this->normalizeAnswer(
@@ -356,6 +340,9 @@ class KuisController extends Controller
                 $data['id_kuis'] =
                     $item->id_kuis;
 
+                $data['durasi'] =
+                    $item->durasi;
+
                 $formatted[] = $data;
             }
         }
@@ -372,6 +359,8 @@ class KuisController extends Controller
 
     public function soalByKuis($id)
     {
+        $kuis = Kuis::findOrFail($id);
+
         $setting =
             JumlahSoal::first();
 
@@ -402,9 +391,15 @@ class KuisController extends Controller
                 }
             );
 
-        return response()->json(
-            $formatted->values()
-        );
+        return response()->json([
+            'id_kuis' => $kuis->id_kuis,
+
+            'judul' => $kuis->judul,
+
+            'durasi' => $kuis->durasi,
+
+            'soal' => $formatted->values(),
+        ]);
     }
 
 
@@ -417,7 +412,8 @@ class KuisController extends Controller
         return Kuis::select(
             'id_kuis',
             'judul',
-            'deskripsi'
+            'deskripsi',
+            'durasi'
         )
             ->where(
                 'status',
@@ -512,16 +508,18 @@ class KuisController extends Controller
 
     public function store(Request $request)
     {
-        /*
-         * VALIDASI DASAR
-         */
-
         $request->validate([
             'judul' =>
                 'required|string',
 
+            'deskripsi' =>
+                'nullable|string',
+
             'status' =>
                 'required|in:aktif,draft',
+
+            'durasi' =>
+                'required|integer|min:1',
 
             'soal' =>
                 'required|array|min:5',
@@ -561,10 +559,6 @@ class KuisController extends Controller
         ]);
 
 
-        /*
-         * VALIDASI SETIAP SOAL
-         */
-
         foreach (
             $request->soal as $index => $soal
         ) {
@@ -590,10 +584,6 @@ class KuisController extends Controller
         }
 
 
-        /*
-         * BUAT KUIS
-         */
-
         $kuis =
             Kuis::create([
                 'id_guru' => 1,
@@ -609,20 +599,15 @@ class KuisController extends Controller
 
                 'total_soal' =>
                     count($request->soal),
+
+                'durasi' =>
+                    $request->durasi,
             ]);
 
-
-        /*
-         * SIMPAN SEMUA SOAL
-         */
 
         foreach (
             $request->soal as $index => $s
         ) {
-
-            /*
-             * GAMBAR PERTANYAAN
-             */
 
             $gambarPertanyaanFile =
                 $this->getQuestionImage(
@@ -635,10 +620,6 @@ class KuisController extends Controller
                     $gambarPertanyaanFile
                 );
 
-
-            /*
-             * GAMBAR PILIHAN A-D
-             */
 
             $gambarA =
                 $this->storeImage(
@@ -677,19 +658,11 @@ class KuisController extends Controller
                 );
 
 
-            /*
-             * JAWABAN
-             */
-
             $jawaban =
                 $this->normalizeAnswer(
                     $s['jawaban'] ?? null
                 );
 
-
-            /*
-             * SIMPAN DETAIL
-             */
 
             DetailKuis::create([
 
@@ -804,16 +777,18 @@ class KuisController extends Controller
             Kuis::findOrFail($id);
 
 
-        /*
-         * VALIDASI
-         */
-
         $request->validate([
             'judul' =>
                 'required|string',
 
+            'deskripsi' =>
+                'nullable|string',
+
             'status' =>
                 'required|in:aktif,draft',
+
+            'durasi' =>
+                'required|integer|min:1',
 
             'soal' =>
                 'required|array|min:5',
@@ -853,10 +828,6 @@ class KuisController extends Controller
         ]);
 
 
-        /*
-         * VALIDASI SOAL
-         */
-
         foreach (
             $request->soal as $index => $soal
         ) {
@@ -870,10 +841,6 @@ class KuisController extends Controller
                     ? DetailKuis::find($idDetail)
                     : null;
 
-
-            /*
-             * PERTANYAAN
-             */
 
             $pertanyaan =
                 trim(
@@ -911,10 +878,6 @@ class KuisController extends Controller
                 ], 422);
             }
 
-
-            /*
-             * PILIHAN A-D
-             */
 
             foreach (
                 ['A', 'B', 'C', 'D'] as $option
@@ -965,10 +928,6 @@ class KuisController extends Controller
             }
 
 
-            /*
-             * JAWABAN
-             */
-
             $jawaban =
                 $this->normalizeAnswer(
                     $soal['jawaban'] ?? null
@@ -985,10 +944,6 @@ class KuisController extends Controller
         }
 
 
-        /*
-         * UPDATE DATA KUIS
-         */
-
         $kuis->update([
             'judul' =>
                 $request->judul,
@@ -1001,12 +956,11 @@ class KuisController extends Controller
 
             'total_soal' =>
                 count($request->soal),
+
+            'durasi' =>
+                $request->durasi,
         ]);
 
-
-        /*
-         * ID SOAL YANG MASIH DIGUNAKAN
-         */
 
         $submittedIds =
             collect($request->soal)
@@ -1021,10 +975,6 @@ class KuisController extends Controller
                 ->values()
                 ->toArray();
 
-
-        /*
-         * HAPUS SOAL YANG DIHILANGKAN
-         */
 
         $soalLama =
             DetailKuis::where(
@@ -1052,10 +1002,6 @@ class KuisController extends Controller
         }
 
 
-        /*
-         * UPDATE / TAMBAH SOAL
-         */
-
         foreach (
             $request->soal as $index => $s
         ) {
@@ -1082,10 +1028,6 @@ class KuisController extends Controller
                     )
                     ->firstOrFail();
 
-
-                /*
-                 * GAMBAR PERTANYAAN LAMA
-                 */
 
                 $gambarPertanyaan =
                     $detail->gambar_pertanyaan;
@@ -1209,19 +1151,11 @@ class KuisController extends Controller
                 }
 
 
-                /*
-                 * JAWABAN
-                 */
-
                 $jawaban =
                     $this->normalizeAnswer(
                         $s['jawaban'] ?? null
                     );
 
-
-                /*
-                 * UPDATE DETAIL
-                 */
 
                 $detail->update([
 
@@ -1537,20 +1471,12 @@ class KuisController extends Controller
             $point = 0;
 
 
-            /*
-             * NORMALISASI JAWABAN SISWA
-             */
-
             $jawabanSiswa =
                 $this->normalizeAnswer(
                     $item['jawaban_siswa']
                     ?? null
                 );
 
-
-            /*
-             * CEK BENAR
-             */
 
             if (
                 $jawabanSiswa &&
@@ -1563,10 +1489,6 @@ class KuisController extends Controller
                 $point = 10;
             }
 
-
-            /*
-             * SIMPAN JAWABAN SISWA
-             */
 
             JawabanSiswa::create([
                 'id_detail_kuis' =>
@@ -1583,10 +1505,6 @@ class KuisController extends Controller
             ]);
         }
 
-
-        /*
-         * HITUNG NILAI
-         */
 
         $nilai = 0;
 
@@ -1605,10 +1523,6 @@ class KuisController extends Controller
         }
 
 
-        /*
-         * JAWABAN TERAKHIR
-         */
-
         $jawabanTerakhir =
             JawabanSiswa::where(
                 'id_siswa',
@@ -1617,10 +1531,6 @@ class KuisController extends Controller
             ->latest()
             ->first();
 
-
-        /*
-         * SIMPAN NILAI
-         */
 
         if (
             $detailTerakhir &&
