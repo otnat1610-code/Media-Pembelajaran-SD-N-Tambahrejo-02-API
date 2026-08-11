@@ -6,23 +6,19 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::table('tb_kuis', function (Blueprint $table) {
-            //
+            $table->integer('durasi')
+                ->default(10)
+                ->after('total_soal');
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::table('tb_kuis', function (Blueprint $table) {
-            //
+            $table->dropColumn('durasi');
         });
     }
 };
