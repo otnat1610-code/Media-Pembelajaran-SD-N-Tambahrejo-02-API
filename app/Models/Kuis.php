@@ -17,10 +17,12 @@ class Kuis extends Model
         'status',
         'tanggal_dibuat',
         'total_soal',
+        'durasi',
     ];
 
     protected $casts = [
         'tanggal_dibuat' => 'datetime',
+        'durasi' => 'integer',
     ];
 
     // RELASI GURU
@@ -43,13 +45,13 @@ class Kuis extends Model
         );
     }
 
+    // RELASI JUMLAH SOAL
     public function jumlahSoal()
-{
-    return $this->hasOne(
-        JumlahSoal::class,
-        'id_kuis',
-        'id_kuis'
-    );
+    {
+        return $this->hasOne(
+            JumlahSoal::class,
+            'id_kuis',
+            'id_kuis'
+        );
+    }
 }
-}
-
