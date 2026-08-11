@@ -144,7 +144,7 @@ class KuisController extends Controller
 
 
     // =====================================================
-    // AMBIL FILE GAMBAR
+    // AMBIL FILE GAMBAR PERTANYAAN
     // =====================================================
 
     private function getQuestionImage(
@@ -164,6 +164,10 @@ class KuisController extends Controller
             ?? null;
     }
 
+
+    // =====================================================
+    // AMBIL FILE GAMBAR PILIHAN
+    // =====================================================
 
     private function getOptionImage(
         Request $request,
@@ -340,8 +344,9 @@ class KuisController extends Controller
                 $data['id_kuis'] =
                     $item->id_kuis;
 
+                // Default durasi 10 menit
                 $data['durasi'] =
-                    $item->durasi;
+                    $item->durasi ?? 10;
 
                 $formatted[] = $data;
             }
@@ -392,13 +397,18 @@ class KuisController extends Controller
             );
 
         return response()->json([
-            'id_kuis' => $kuis->id_kuis,
+            'id_kuis' =>
+                $kuis->id_kuis,
 
-            'judul' => $kuis->judul,
+            'judul' =>
+                $kuis->judul,
 
-            'durasi' => $kuis->durasi,
+            // Default durasi 10 menit
+            'durasi' =>
+                $kuis->durasi ?? 10,
 
-            'soal' => $formatted->values(),
+            'soal' =>
+                $formatted->values(),
         ]);
     }
 
@@ -409,17 +419,34 @@ class KuisController extends Controller
 
     public function listKuis()
     {
-        return Kuis::select(
+        $kuis = Kuis::select(
             'id_kuis',
             'judul',
             'deskripsi',
+            'status',
             'durasi'
         )
             ->where(
                 'status',
                 'aktif'
             )
+            ->orderBy(
+                'id_kuis',
+                'desc'
+            )
             ->get();
+
+        // Pastikan durasi selalu mempunyai nilai
+        $kuis->each(
+            function ($item) {
+                $item->durasi =
+                    $item->durasi ?? 10;
+            }
+        );
+
+        return response()->json(
+            $kuis
+        );
     }
 
 
@@ -439,6 +466,10 @@ class KuisController extends Controller
 
         $kuis->each(
             function ($item) {
+
+                // Default durasi
+                $item->durasi =
+                    $item->durasi ?? 10;
 
                 $item->detailKuis->each(
                     function ($detail) {
@@ -518,8 +549,12 @@ class KuisController extends Controller
             'status' =>
                 'required|in:aktif,draft',
 
+            /*
+             * DURASI TIDAK WAJIB DIISI
+             * Default = 10 menit
+             */
             'durasi' =>
-                'required|integer|min:1',
+                'nullable|integer|min:1',
 
             'soal' =>
                 'required|array|min:5',
@@ -584,6 +619,16 @@ class KuisController extends Controller
         }
 
 
+        /*
+         * JIKA DURASI TIDAK DIKIRIM
+         * MAKA OTOMATIS 10 MENIT
+         */
+        $durasi =
+            $request->filled('durasi')
+                ? (int) $request->durasi
+                : 10;
+
+
         $kuis =
             Kuis::create([
                 'id_guru' => 1,
@@ -601,7 +646,7 @@ class KuisController extends Controller
                     count($request->soal),
 
                 'durasi' =>
-                    $request->durasi,
+                    $durasi,
             ]);
 
 
@@ -729,6 +774,10 @@ class KuisController extends Controller
                 'detailKuis'
             )->findOrFail($id);
 
+        // Default durasi
+        $kuis->durasi =
+            $kuis->durasi ?? 10;
+
         $kuis->detailKuis->each(
             function ($detail) {
 
@@ -787,8 +836,11 @@ class KuisController extends Controller
             'status' =>
                 'required|in:aktif,draft',
 
+            /*
+             * DURASI TIDAK WAJIB
+             */
             'durasi' =>
-                'required|integer|min:1',
+                'nullable|integer|min:1',
 
             'soal' =>
                 'required|array|min:5',
@@ -944,6 +996,24 @@ class KuisController extends Controller
         }
 
 
+        /*
+         * DURASI UPDATE
+         *
+         * Jika frontend mengirim durasi:
+         * gunakan durasi tersebut.
+         *
+         * Jika tidak mengirim:
+         * gunakan durasi lama.
+         *
+         * Jika durasi lama NULL:
+         * gunakan 10 menit.
+         */
+        $durasi =
+            $request->filled('durasi')
+                ? (int) $request->durasi
+                : ($kuis->durasi ?? 10);
+
+
         $kuis->update([
             'judul' =>
                 $request->judul,
@@ -958,7 +1028,7 @@ class KuisController extends Controller
                 count($request->soal),
 
             'durasi' =>
-                $request->durasi,
+                $durasi,
         ]);
 
 
@@ -1303,6 +1373,9 @@ class KuisController extends Controller
         return response()->json([
             'message' =>
                 'Kuis berhasil diperbarui',
+
+            'durasi' =>
+                $durasi,
         ]);
     }
 
@@ -1465,6 +1538,17 @@ class KuisController extends Controller
                 continue;
             }
 
+            /*
+             * Pastikan jawaban yang dikirim
+             * memang berasal dari kuis yang sedang dikerjakan.
+             */
+            if (
+                (int) $detail->id_kuis !==
+                (int) $request->id_kuis
+            ) {
+                continue;
+            }
+
             $detailTerakhir =
                 $detail;
 
@@ -1528,7 +1612,9 @@ class KuisController extends Controller
                 'id_siswa',
                 $request->id_siswa
             )
-            ->latest()
+            ->latest(
+                'id_jawaban_siswa'
+            )
             ->first();
 
 
