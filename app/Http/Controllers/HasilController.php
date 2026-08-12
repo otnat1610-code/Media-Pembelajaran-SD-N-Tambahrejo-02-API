@@ -9,32 +9,6 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class HasilController extends Controller
 {
- public function exportExcel()
-{
-    return Excel::download(
-        new HasilExport(),
-        'hasil_penilaian.xlsx'
-    );
-}
-
-public function exportPdf()
-{
-    $hasil = PerolehanNilai::with([
-        'siswa',
-        'kuis'
-    ])
-    ->latest()
-    ->get();
-
-    $pdf = Pdf::loadView(
-        'exports.hasil-pdf',
-        compact('hasil')
-    );
-
-    return $pdf->download(
-        'hasil_penilaian.pdf'
-    );
-}
     // =========================
     // GET HASIL NILAI
     // =========================
@@ -51,6 +25,8 @@ public function exportPdf()
 
         foreach ($hasil as $item) {
 
+            $nilai = (float) ($item->total_nilai ?? 0);
+
             $formatted[] = [
 
                 'id' =>
@@ -63,21 +39,75 @@ public function exportPdf()
                     $item->kuis->judul ?? '-',
 
                 'nilai' =>
-                    $item->total_nilai,
+                    $nilai,
 
                 'tanggal' =>
                     $item->created_at
-                        ->format('Y-m-d'),
+                        ? $item->created_at->format('Y-m-d')
+                        : '-',
 
                 'status' =>
-                    $item->total_nilai >= 75
-                        ? 'lulus'
-                        : 'remedial',
-
-
+                    $nilai >= 75
+                        ? 'memenuhi kkm'
+                        : 'tidak memenuhi kkm',
             ];
         }
 
         return response()->json($formatted);
+    }
+
+
+    // =========================
+    // EXPORT EXCEL
+    // =========================
+    public function exportExcel()
+    {
+        return Excel::download(
+            new HasilExport(),
+            'hasil_penilaian.xlsx'
+        );
+    }
+
+
+    // =========================
+    // EXPORT PDF
+    // =========================
+    public function exportPdf()
+    {
+        try {
+
+            $hasil = PerolehanNilai::with([
+                'siswa',
+                'kuis'
+            ])
+            ->latest()
+            ->get();
+
+            $pdf = Pdf::loadView(
+                'exports.hasil-pdf',
+                [
+                    'hasil' => $hasil
+                ]
+            );
+
+            $pdf->setPaper('A4', 'landscape');
+
+            return $pdf->download(
+                'hasil_penilaian.pdf'
+            );
+
+        } catch (\Throwable $e) {
+
+            \Log::error(
+                'EXPORT PDF HASIL GAGAL: ' .
+                $e->getMessage()
+            );
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membuat PDF',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }
